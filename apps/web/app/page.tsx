@@ -5,20 +5,22 @@ import { Sparkline } from "../components/sparkline";
 import { RecentApplications } from "../components/recent-applications";
 import { ModeBanner } from "../components/mode-banner";
 import { worker } from "../lib/worker";
+import { IS_DEMO, demoStatus, demoDashboard } from "../lib/demo";
 
 export const dynamic = "force-dynamic";
 
 async function getData() {
+  if (IS_DEMO) return { status: demoStatus, dash: demoDashboard, demo: true };
   try {
     const [status, dash] = await Promise.all([worker.status(), worker.dashboard()]);
-    return { status, dash, error: null as string | null };
-  } catch (e: any) {
-    return { status: null, dash: null, error: e?.message ?? "Worker unavailable" };
+    return { status, dash, demo: false };
+  } catch {
+    return { status: demoStatus, dash: demoDashboard, demo: true };
   }
 }
 
 export default async function DashboardPage() {
-  const { status, dash, error } = await getData();
+  const { status, dash, demo } = await getData();
 
   if (status && !status.onboarded) redirect("/onboarding");
 
@@ -39,11 +41,11 @@ export default async function DashboardPage() {
         </Link>
       </header>
 
-      {error && (
-        <div className="card" style={{ borderColor: "var(--color-warn)" }}>
-          <div className="font-medium mb-1">Worker is offline.</div>
+      {demo && (
+        <div className="card" style={{ borderColor: "var(--color-accent)", background: "var(--color-surface-2)" }}>
+          <div className="font-medium mb-1">Preview mode</div>
           <div className="text-[13px]" style={{ color: "var(--color-ink-soft)" }}>
-            Run <code>pnpm dev:worker</code> in another terminal — the dashboard pulls live data from it.
+            You're viewing sample data. Real applications run from a local worker — clone the repo and run <code>pnpm dev:worker</code> to apply for real.
           </div>
         </div>
       )}

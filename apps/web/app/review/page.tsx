@@ -1,16 +1,20 @@
 import { ReviewList } from "./review-list";
 import { worker } from "../../lib/worker";
+import { IS_DEMO, demoAwaiting } from "../../lib/demo";
 
 export const dynamic = "force-dynamic";
 
-export default async function ReviewPage() {
-  let items: any[] = [];
-  let error: string | null = null;
+async function loadItems(): Promise<{ items: any[]; demo: boolean }> {
+  if (IS_DEMO) return { items: demoAwaiting, demo: true };
   try {
-    items = await worker.awaiting();
-  } catch (e: any) {
-    error = e?.message ?? "Worker offline";
+    return { items: await worker.awaiting(), demo: false };
+  } catch {
+    return { items: demoAwaiting, demo: true };
   }
+}
+
+export default async function ReviewPage() {
+  const { items, demo } = await loadItems();
   return (
     <div>
       <header className="mb-6">
@@ -19,9 +23,12 @@ export default async function ReviewPage() {
           {items.length} {items.length === 1 ? "application" : "applications"} ready for your call.
         </p>
       </header>
-      {error && (
-        <div className="card" style={{ borderColor: "var(--color-warn)" }}>
-          {error}
+      {demo && (
+        <div className="card mb-4" style={{ borderColor: "var(--color-accent)", background: "var(--color-surface-2)" }}>
+          <div className="font-medium">Preview mode</div>
+          <div className="text-[13px] mt-1" style={{ color: "var(--color-ink-soft)" }}>
+            Sample queue. Run the local worker to review real applications.
+          </div>
         </div>
       )}
       <ReviewList initial={items} />

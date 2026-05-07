@@ -62,6 +62,20 @@ Pookie is built to be visible and stoppable.
 - **Audit log** — every submission saves a screenshot + HTML + answers JSON in `.pookie/screenshots/<id>/`
 - **Confidence threshold** — any answer below 0.6 confidence on a required field halts the application and routes it to the review queue
 
+## Deployment
+
+**Pookie is a local desktop tool, not a serverless web app.** It needs:
+- a real Chrome browser running headed (Playwright launches it)
+- a persistent filesystem for the SQLite DB and the LinkedIn session
+- a long-running worker process (port 3001) — not a function-per-request
+
+Vercel/Netlify will compile the frontend but the deployed app will be broken because none of the above exist on serverless. Recommended hosts:
+
+- **Marina's Mac** (default — what this is built for). `pnpm dev` on her laptop.
+- **VPS (Fly.io / Railway / Hetzner / DigitalOcean)** — deploy as a single Node process. Add `playwright install chromium` in the build step. Cheap, works.
+- **Tailscale** — keep it on Marina's Mac, share the URL only with you over a private mesh.
+- **Cloudflare Tunnel** — same idea, public URL pointing at her local server.
+
 ## LinkedIn ToS
 
 LinkedIn prohibits automated activity. Pookie mitigates ban risk with stealth, human-like cadence, low daily volume, real-Chrome browsing, and a kill switch — but the risk is real. Use it on your primary account at your own discretion.

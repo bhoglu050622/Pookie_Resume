@@ -289,8 +289,9 @@ app.get("/stream", (c) => {
   );
 });
 
-const port = Number(process.env.WORKER_PORT ?? 3001);
-serve({ fetch: app.fetch, port });
+// Railway / many PaaS providers set PORT — honor it. Fall back to WORKER_PORT for local dev.
+const port = Number(process.env.PORT ?? process.env.WORKER_PORT ?? 3001);
+serve({ fetch: app.fetch, port, hostname: "0.0.0.0" });
 log.info({ port }, "worker http server ready");
 
 // Auto-start the queue loop when worker boots

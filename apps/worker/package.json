@@ -9,6 +9,7 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@browserbasehq/sdk": "^2.10.0",
     "@google/genai": "1.27.0",
     "@hono/node-server": "1.13.7",
     "@pookie/db": "workspace:*",

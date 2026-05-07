@@ -9,7 +9,8 @@ import { serve } from "@hono/node-server";
 import { startQueueLoop, stopQueueLoop, enqueue } from "./queue.js";
 import { ensureLoggedIn } from "./linkedin/login.js";
 import { applyToJob } from "./linkedin/easy-apply.js";
-import { closeContext, getContext } from "./stealth.js";
+import { closeContext, getContext, getCurrentBrowserbaseSession } from "./stealth.js";
+import { isBrowserbaseEnabled } from "./browserbase.js";
 import { Settings, todayFunnel, weeklySparkline, lastApplications, awaitingReview, dailyAppCount } from "@pookie/db/queries.js";
 import { getSqlite } from "@pookie/db";
 import { log, subscribe } from "./log.js";
@@ -124,6 +125,43 @@ app.post("/login", async (c) => {
   // Fire login flow non-blocking
   ensureLoggedIn().catch((e) => log.error({ err: e?.message }, "login flow error"));
   return c.json({ ok: true });
+});
+
+// Browserbase-backed sign-in: spin up a remote browser session and return a
+// live URL the user can interact with directly. Cookies persist in the
+// Browserbase Context so subsequent worker actions stay signed in.
+app.post("/login/browserbase/start", async (c) => {
+  if (!isBrowserbaseEnabled()) {
+    return c.json({ error: "browserbase not configured (set BROWSERBASE_API_KEY + BROWSERBASE_PROJECT_ID)" }, 400);
+  }
+  // Force-create a fresh session for the user to drive
+  await closeContext();
+  const ctx = await getContext();
+  const sess = getCurrentBrowserbaseSession();
+  if (!sess) return c.json({ error: "could not start browserbase session" }, 500);
+
+  // Pre-navigate the remote browser to LinkedIn so the user lands on the right page
+  const page = ctx.pages()[0] ?? (await ctx.newPage());
+  page.goto("https://www.linkedin.com/login").catch(() => {});
+
+  return c.json({ ok: true, sessionId: sess.id, liveUrl: sess.liveUrl });
+});
+
+app.get("/login/browserbase/status", async (c) => {
+  if (!isBrowserbaseEnabled()) return c.json({ error: "not configured" }, 400);
+  try {
+    const ctx = await getContext();
+    const page = ctx.pages()[0] ?? (await ctx.newPage());
+    // Quick check: navigate to /feed/ — if not redirected to /login, we're in.
+    await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
+    const url = page.url();
+    const signedIn = url.includes("/feed");
+    if (signedIn) Settings.set("session_logged_in", true);
+    const sess = getCurrentBrowserbaseSession();
+    return c.json({ signed_in: signedIn, landed_on: url, sessionId: sess?.id, liveUrl: sess?.liveUrl });
+  } catch (e: any) {
+    return c.json({ error: e?.message ?? "status check failed" }, 500);
+  }
 });
 
 // Cookie-based login: caller pastes LinkedIn cookies (typically exported via a

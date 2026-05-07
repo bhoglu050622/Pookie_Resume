@@ -44,6 +44,8 @@ export const worker = {
     "/login/cookies",
     { method: "POST", body: JSON.stringify({ cookies }) }
   ),
+  bbStart: () => worker.json<{ ok: boolean; sessionId: string; liveUrl: string }>("/login/browserbase/start", { method: "POST" }),
+  bbStatus: () => worker.json<{ signed_in: boolean; landed_on?: string; sessionId?: string; liveUrl?: string }>("/login/browserbase/status"),
   discover: (body: any) => worker.json<any>("/discover", { method: "POST", body: JSON.stringify(body) }),
   setMode: (mode: "shadow" | "auto") => worker.json<any>("/mode", { method: "POST", body: JSON.stringify({ mode }) }),
   submitApplication: (id: number) => worker.json<any>(`/applications/${id}/submit`, { method: "POST" }),

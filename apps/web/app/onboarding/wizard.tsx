@@ -48,9 +48,14 @@ export function Wizard({ initialStatus }: { initialStatus: any }) {
   const [exclusions, setExclusions] = useState<string[]>(["unpaid", "internship", "intern"]);
 
   const [sessionLoggedIn, setSessionLoggedIn] = useState(initialStatus?.session_logged_in ?? false);
+  const [loginMode, setLoginMode] = useState<"browserbase" | "cookies">("browserbase");
   const [cookiesText, setCookiesText] = useState("");
   const [submittingCookies, setSubmittingCookies] = useState(false);
   const [cookieError, setCookieError] = useState<string | null>(null);
+  const [bbLiveUrl, setBbLiveUrl] = useState<string | null>(null);
+  const [bbStarting, setBbStarting] = useState(false);
+  const [bbPolling, setBbPolling] = useState(false);
+  const [bbError, setBbError] = useState<string | null>(null);
 
   const [finishing, setFinishing] = useState(false);
 
@@ -68,6 +73,34 @@ export function Wizard({ initialStatus }: { initialStatus: any }) {
       setParseError(e?.message ?? "Failed to parse resumes");
     } finally {
       setParsing(false);
+    }
+  }
+
+  async function startBrowserbase() {
+    setBbStarting(true);
+    setBbError(null);
+    try {
+      const r = await fetch("/api/login/browserbase/start", { method: "POST" });
+      const j = await r.json();
+      if (!r.ok || !j?.liveUrl) throw new Error(j?.error ?? "Could not start Browserbase session");
+      setBbLiveUrl(j.liveUrl);
+      window.open(j.liveUrl, "pookie-bb-login", "width=1200,height=820,popup=yes");
+      // Poll until LinkedIn /feed/ is reachable from within the remote browser
+      setBbPolling(true);
+      const start = Date.now();
+      while (Date.now() - start < 7 * 60_000) {
+        await new Promise((r) => setTimeout(r, 4000));
+        const s = await fetch("/api/login/browserbase/status").then((r) => r.json()).catch(() => null);
+        if (s?.signed_in) {
+          setSessionLoggedIn(true);
+          break;
+        }
+      }
+      setBbPolling(false);
+    } catch (e: any) {
+      setBbError(e?.message ?? "Could not start sign-in");
+    } finally {
+      setBbStarting(false);
     }
   }
 
@@ -195,35 +228,77 @@ export function Wizard({ initialStatus }: { initialStatus: any }) {
             </div>
           ) : (
             <>
-              <p className="text-[14px]" style={{ color: "var(--color-ink-soft)" }}>
-                Pookie runs in the cloud, so it can't open a sign-in window for you. Instead, sign in to LinkedIn yourself in your browser, then export your cookies once. Pookie reuses them.
-              </p>
-              <ol className="mt-4 text-[13px] flex flex-col gap-2" style={{ color: "var(--color-ink-soft)" }}>
-                <li><strong>1.</strong> Install the <a className="link" href="https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm" target="_blank" rel="noreferrer">Cookie-Editor</a> extension on Chrome.</li>
-                <li><strong>2.</strong> Open <a className="link" href="https://www.linkedin.com/feed/" target="_blank" rel="noreferrer">linkedin.com/feed</a> and make sure you're signed in.</li>
-                <li><strong>3.</strong> Click the Cookie-Editor icon → <em>Export</em> → <em>Export as JSON</em> (copies to clipboard).</li>
-                <li><strong>4.</strong> Paste below and hit Connect.</li>
-              </ol>
-              <textarea
-                className="textarea mt-4 font-mono text-[12px]"
-                rows={6}
-                placeholder="[ { &quot;name&quot;: &quot;li_at&quot;, &quot;value&quot;: &quot;...&quot;, &quot;domain&quot;: &quot;.linkedin.com&quot;, ... } ]"
-                value={cookiesText}
-                onChange={(e) => setCookiesText(e.target.value)}
-              />
-              {cookieError && (
-                <div className="text-[13px] mt-2" style={{ color: "var(--color-warn)" }}>
-                  {cookieError}
-                </div>
-              )}
-              <div className="mt-4 flex items-center gap-3">
-                <button className="btn btn-primary" disabled={submittingCookies || !cookiesText.trim()} onClick={submitCookies}>
-                  {submittingCookies && <Loader2 size={14} className="animate-spin" />} Connect
+              <div className="flex items-center gap-2 mb-4">
+                <button
+                  className={`btn ${loginMode === "browserbase" ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setLoginMode("browserbase")}
+                  type="button"
+                >
+                  Sign in (recommended)
                 </button>
-                <p className="text-[12px]" style={{ color: "var(--color-ink-faint)" }}>
-                  Cookies stay on Pookie's server — never sent anywhere else.
-                </p>
+                <button
+                  className={`btn ${loginMode === "cookies" ? "btn-primary" : "btn-ghost"}`}
+                  onClick={() => setLoginMode("cookies")}
+                  type="button"
+                >
+                  Paste cookies
+                </button>
               </div>
+
+              {loginMode === "browserbase" ? (
+                <>
+                  <p className="text-[14px]" style={{ color: "var(--color-ink-soft)" }}>
+                    Click below to open a secure remote browser. Sign in to LinkedIn there like normal —
+                    Pookie reuses that session for every job. Your password is typed into LinkedIn's
+                    own page, not Pookie's, and the session lives in an isolated cloud profile.
+                  </p>
+                  <div className="mt-4 flex items-center gap-3">
+                    <button className="btn btn-primary" disabled={bbStarting || bbPolling} onClick={startBrowserbase}>
+                      {(bbStarting || bbPolling) && <Loader2 size={14} className="animate-spin" />}
+                      {bbPolling ? "Waiting for sign-in…" : "Open LinkedIn"}
+                    </button>
+                    {bbLiveUrl && (
+                      <a className="link text-[13px]" href={bbLiveUrl} target="_blank" rel="noreferrer">
+                        Reopen window
+                      </a>
+                    )}
+                  </div>
+                  {bbError && (
+                    <div className="text-[13px] mt-3" style={{ color: "var(--color-warn)" }}>
+                      {bbError}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-[14px]" style={{ color: "var(--color-ink-soft)" }}>
+                    Manual fallback. Sign in on your own browser, then export cookies once.
+                  </p>
+                  <ol className="mt-4 text-[13px] flex flex-col gap-2" style={{ color: "var(--color-ink-soft)" }}>
+                    <li><strong>1.</strong> Install the <a className="link" href="https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm" target="_blank" rel="noreferrer">Cookie-Editor</a> extension on Chrome.</li>
+                    <li><strong>2.</strong> Open <a className="link" href="https://www.linkedin.com/feed/" target="_blank" rel="noreferrer">linkedin.com/feed</a>, make sure you're signed in.</li>
+                    <li><strong>3.</strong> Click Cookie-Editor → <em>Export</em> → <em>Export as JSON</em>.</li>
+                    <li><strong>4.</strong> Paste below.</li>
+                  </ol>
+                  <textarea
+                    className="textarea mt-4 font-mono text-[12px]"
+                    rows={6}
+                    placeholder="[ { &quot;name&quot;: &quot;li_at&quot;, &quot;value&quot;: &quot;...&quot;, ... } ]"
+                    value={cookiesText}
+                    onChange={(e) => setCookiesText(e.target.value)}
+                  />
+                  {cookieError && (
+                    <div className="text-[13px] mt-2" style={{ color: "var(--color-warn)" }}>
+                      {cookieError}
+                    </div>
+                  )}
+                  <div className="mt-4 flex items-center gap-3">
+                    <button className="btn btn-primary" disabled={submittingCookies || !cookiesText.trim()} onClick={submitCookies}>
+                      {submittingCookies && <Loader2 size={14} className="animate-spin" />} Connect
+                    </button>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

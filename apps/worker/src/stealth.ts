@@ -5,6 +5,8 @@ import path from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { log } from "./log.js";
+import { isBrowserbaseEnabled, createSession as bbCreateSession, type BBSession } from "./browserbase.js";
+import { Settings } from "@pookie/db/queries.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +15,10 @@ const chromium = addExtra(baseChromium as any);
 chromium.use(StealthPlugin());
 
 let _context: BrowserContext | null = null;
+let _bbSession: BBSession | null = null;
+export function getCurrentBrowserbaseSession(): BBSession | null {
+  return _bbSession;
+}
 
 function profileDir(): string {
   const root = path.resolve(__dirname, "../../..");
@@ -25,13 +31,25 @@ function profileDir(): string {
 
 export async function getContext(): Promise<BrowserContext> {
   if (_context) return _context;
+
+  // Browserbase-backed remote browser: persistent context across sessions, real
+  // residential IP, user can drive sign-in via a live URL.
+  if (isBrowserbaseEnabled()) {
+    const sess = await bbCreateSession({ keepAlive: true });
+    _bbSession = sess;
+    Settings.set("bb_session_id", sess.id);
+    Settings.set("bb_live_url", sess.liveUrl);
+    log.info({ sessionId: sess.id }, "connecting to browserbase via CDP");
+    const browser = await baseChromium.connectOverCDP(sess.connectUrl);
+    // Browserbase ships exactly one default context; reuse it.
+    _context = browser.contexts()[0] ?? (await browser.newContext());
+    return _context;
+  }
+
   const dir = profileDir();
-  // Headless by default in containers (Railway/Docker); can override locally with PLAYWRIGHT_HEADLESS=0.
   const headless = process.env.PLAYWRIGHT_HEADLESS !== "0";
-  // Use bundled chromium (Playwright base image ships chromium, not Chrome stable).
-  // Set PLAYWRIGHT_CHANNEL=chrome locally if you want to use real Chrome.
   const channel = process.env.PLAYWRIGHT_CHANNEL;
-  log.info({ dir, headless, channel: channel ?? "chromium" }, "launching persistent browser");
+  log.info({ dir, headless, channel: channel ?? "chromium" }, "launching local persistent browser");
   _context = await chromium.launchPersistentContext(dir, {
     ...(channel ? { channel } : {}),
     headless,
@@ -52,6 +70,13 @@ export async function closeContext() {
   if (_context) {
     try { await _context.close(); } catch { /* ignore */ }
     _context = null;
+  }
+  if (_bbSession) {
+    try {
+      const { endSession } = await import("./browserbase.js");
+      await endSession(_bbSession.id);
+    } catch { /* ignore */ }
+    _bbSession = null;
   }
 }
 

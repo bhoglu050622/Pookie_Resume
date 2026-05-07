@@ -7,6 +7,9 @@ const __dirname_ = path.dirname(fileURLToPath(import.meta.url));
 const config: NextConfig = {
   // Pin trace root to the workspace so a stray lockfile in $HOME doesn't confuse Next.
   outputFileTracingRoot: path.resolve(__dirname_, "../.."),
+  // Standalone output bundles a self-contained server.js + minimal node_modules.
+  // This is what we deploy to Hostinger's CloudLinux Node.js app slot.
+  output: "standalone",
   experimental: {
     serverActions: { bodySizeLimit: "5mb" },
   },

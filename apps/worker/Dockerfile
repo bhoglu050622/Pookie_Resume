@@ -30,4 +30,4 @@ ENV WORKER_PORT=3001
 EXPOSE 3001
 
 WORKDIR /app/apps/worker
-CMD ["sh", "-c", "mkdir -p /data/screenshots /data/session && ln -sfn /data /app/.pookie && pnpm start"]
+CMD ["sh", "-c", "mkdir -p /data/screenshots /data/session && ln -sfn /data /app/.pookie && cd /app && pnpm --filter @pookie/db migrate && cd /app/apps/worker && pnpm start"]

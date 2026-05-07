@@ -1,0 +1,24 @@
+[Unit]
+Description=Pookie worker (Hono + Playwright)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pookie
+Group=pookie
+WorkingDirectory=/opt/pookie/apps/worker
+EnvironmentFile=-/opt/pookie/.env
+Environment=NODE_ENV=production
+Environment=WORKER_PORT=3001
+ExecStart=/usr/bin/pnpm start
+Restart=on-failure
+RestartSec=5
+# Playwright Chromium needs writable /tmp and the user's home for the browser profile.
+PrivateTmp=false
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

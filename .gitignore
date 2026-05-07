@@ -1,0 +1,18 @@
+node_modules
+.next
+dist
+.turbo
+
+.env
+.env.local
+
+.pookie/
+*.tsbuildinfo
+.DS_Store
+
+# Personal resumes (contain PII). Drop your own PDFs into resumes/ locally.
+resumes/*.pdf
+Marina_Zeliang_Resume*.pdf
+*.pdf
+!resumes/.gitkeep
+

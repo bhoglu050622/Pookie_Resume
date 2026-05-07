@@ -1,0 +1,31 @@
+{
+  "name": "@pookie/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./queries": "./src/queries.ts",
+    "./queries.js": "./src/queries.ts",
+    "./schema": "./src/schema.ts",
+    "./schema.js": "./src/schema.ts",
+    "./client": "./src/client.ts",
+    "./client.js": "./src/client.ts"
+  },
+  "scripts": {
+    "migrate": "tsx src/migrate.ts",
+    "studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "better-sqlite3": "11.6.0",
+    "drizzle-orm": "0.36.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.12",
+    "drizzle-kit": "0.28.1",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3"
+  }
+}

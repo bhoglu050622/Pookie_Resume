@@ -1,0 +1,32 @@
+{
+  "name": "@pookie/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@google/genai": "1.27.0",
+    "@hono/node-server": "1.13.7",
+    "@pookie/db": "workspace:*",
+    "@pookie/profile": "workspace:*",
+    "dotenv": "16.4.5",
+    "hono": "4.6.14",
+    "node-notifier": "10.0.1",
+    "pino": "9.5.0",
+    "pino-pretty": "13.0.0",
+    "playwright": "1.49.1",
+    "playwright-extra": "4.3.6",
+    "puppeteer-extra-plugin-stealth": "2.11.2",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.9.0",
+    "@types/node-notifier": "8.0.5",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3"
+  }
+}

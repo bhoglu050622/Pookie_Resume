@@ -23,7 +23,8 @@ COPY apps/worker apps/worker
 
 # Persistent state lives on the mounted volume.
 # `.pookie/` is the convention the codebase uses for DB + session + screenshots,
-# so we symlink it to /data at boot. /data should be a Railway volume.
+# so we symlink it to /data at boot. /data must be a Railway volume — without it,
+# uploaded resumes / DB / Chrome cookies vanish on every redeploy.
 ENV DB_PATH=/data/pookie.db
 ENV PERSISTENT_PROFILE_DIR=/data/session
 ENV WORKER_PORT=3001

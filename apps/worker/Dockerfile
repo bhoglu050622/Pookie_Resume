@@ -6,8 +6,7 @@ FROM mcr.microsoft.com/playwright:v1.49.1-jammy
 
 WORKDIR /app
 
-# pnpm via corepack
-RUN corepack enable && corepack prepare pnpm@10.14.0 --activate
+RUN npm install -g pnpm@10.14.0
 
 # Workspace metadata first (better cache)
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./

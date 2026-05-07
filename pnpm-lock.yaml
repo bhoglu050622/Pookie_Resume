@@ -20,15 +20,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@pookie/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@pookie/profile':
-        specifier: workspace:*
-        version: link:../../packages/profile
-      better-sqlite3:
-        specifier: 11.6.0
-        version: 11.6.0
       canvas-confetti:
         specifier: 1.9.3
         version: 1.9.3

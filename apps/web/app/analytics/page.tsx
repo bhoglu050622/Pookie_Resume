@@ -1,4 +1,5 @@
 import { AnalyticsCharts } from "./charts";
+import { worker } from "../../lib/worker";
 import { IS_DEMO, demoAnalytics } from "../../lib/demo";
 
 export const dynamic = "force-dynamic";
@@ -6,38 +7,7 @@ export const dynamic = "force-dynamic";
 async function load() {
   if (IS_DEMO) return { data: demoAnalytics, demo: true };
   try {
-    const { getSqlite } = await import("@pookie/db");
-    const sqlite = getSqlite();
-    const byResume = sqlite.prepare(`
-      SELECT resume_key,
-        COUNT(*) AS total,
-        SUM(CASE WHEN status='submitted' THEN 1 ELSE 0 END) AS submitted,
-        SUM(CASE WHEN status='replied' OR status='interview' THEN 1 ELSE 0 END) AS replied,
-        SUM(CASE WHEN status='interview' THEN 1 ELSE 0 END) AS interview
-      FROM applications
-      GROUP BY resume_key
-    `).all();
-
-    const tod = sqlite.prepare(`
-      SELECT
-        strftime('%H', datetime(submitted_at/1000, 'unixepoch', 'localtime')) AS hour,
-        COUNT(*) AS sent,
-        SUM(CASE WHEN status='replied' OR status='interview' THEN 1 ELSE 0 END) AS replied
-      FROM applications
-      WHERE submitted_at IS NOT NULL
-      GROUP BY hour
-      ORDER BY hour
-    `).all() as any[];
-
-    const days = sqlite.prepare(`
-      SELECT
-        date(datetime(submitted_at/1000, 'unixepoch', 'localtime')) AS day,
-        COUNT(*) AS n
-      FROM applications WHERE submitted_at IS NOT NULL
-      GROUP BY day ORDER BY day
-    `).all() as any[];
-
-    return { data: { byResume, tod, days }, demo: false };
+    return { data: await worker.analytics(), demo: false };
   } catch {
     return { data: demoAnalytics, demo: true };
   }
@@ -57,7 +27,7 @@ export default async function AnalyticsPage() {
         <div className="card mb-4" style={{ borderColor: "var(--color-accent)", background: "var(--color-surface-2)" }}>
           <div className="font-medium">Preview mode</div>
           <div className="text-[13px] mt-1" style={{ color: "var(--color-ink-soft)" }}>
-            Sample analytics. Charts populate from your real applications when the local worker is running.
+            Sample analytics. Charts populate from your real applications when the worker is reachable (set <code>WORKER_URL</code>).
           </div>
         </div>
       )}

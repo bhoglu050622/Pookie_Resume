@@ -64,17 +64,57 @@ Pookie is built to be visible and stoppable.
 
 ## Deployment
 
-**Pookie is a local desktop tool, not a serverless web app.** It needs:
-- a real Chrome browser running headed (Playwright launches it)
-- a persistent filesystem for the SQLite DB and the LinkedIn session
-- a long-running worker process (port 3001) — not a function-per-request
+The app is split into two halves so the frontend can live on Vercel:
 
-Vercel/Netlify will compile the frontend but the deployed app will be broken because none of the above exist on serverless. Recommended hosts:
+```
+[Vercel: Next.js web]  ──HTTPS──►  [Railway: worker (Playwright + SQLite)]
+```
 
-- **Marina's Mac** (default — what this is built for). `pnpm dev` on her laptop.
-- **VPS (Fly.io / Railway / Hetzner / DigitalOcean)** — deploy as a single Node process. Add `playwright install chromium` in the build step. Cheap, works.
-- **Tailscale** — keep it on Marina's Mac, share the URL only with you over a private mesh.
-- **Cloudflare Tunnel** — same idea, public URL pointing at her local server.
+The web app is a thin HTTP client — all data and actions go through the worker.
+The worker holds the browser, the LinkedIn session, the SQLite DB, and the
+applications loop. It cannot run on Vercel (serverless ≠ daemon, no persistent
+disk, function size limits).
+
+### 1. Deploy the worker to Railway
+
+1. Create a new Railway project pointed at this repo.
+2. Set the service's **root directory** to `apps/worker` (Railway auto-picks
+   `apps/worker/Dockerfile` and `apps/worker/railway.toml`).
+3. Add a **volume** mounted at `/data` (Settings → Volumes). This holds the
+   SQLite DB, LinkedIn cookies, and screenshot audit trail across redeploys.
+4. Set env vars:
+   - `GOOGLE_GENAI_API_KEY` — your Gemini key (or `ANTHROPIC_API_KEY` if you swap providers)
+   - `WORKER_TOKEN` — a long random string; the web app will send this as `Authorization: Bearer ...`
+   - `WEB_ORIGIN` — your Vercel URL (e.g. `https://pookie-resume.vercel.app`) — optional, hardens CORS
+5. Deploy. Note the public URL Railway assigns (e.g. `https://pookie-worker-production.up.railway.app`).
+
+### 2. Configure Vercel
+
+Set these env vars on the Vercel project (Settings → Environment Variables):
+
+- `WORKER_URL` — the Railway URL from step 1.5
+- `WORKER_TOKEN` — the **same** token you set on Railway
+- `WORKER_TIMEOUT_MS` — optional, defaults to `8000`
+
+Redeploy. With `WORKER_URL` set, the dashboard talks to Railway and the
+"Preview mode" banner disappears. Without it, Vercel falls back to demo data
+so the URL is never broken.
+
+### 3. First-time login
+
+After deploy you still need to log into LinkedIn **once**. Two options:
+
+- **Run the worker locally first** (`pnpm dev:worker` → click "Connect
+  LinkedIn"), then copy `.pookie/session/` to Railway's volume via
+  `railway run` shell and an `scp`-equivalent. The session is just cookies
+  + storage — Marina stays logged in across redeploys.
+- **Or** ssh into the Railway container, run `playwright codegen
+  https://www.linkedin.com/login`, sign in, and the persistent profile at
+  `/data/session/` captures cookies.
+
+LinkedIn requires a headed browser for the initial login (2FA / device
+verification). Once cookies are in `/data/session/`, the worker reuses them
+headless or headed depending on your config.
 
 ## LinkedIn ToS
 
@@ -95,10 +135,19 @@ The worker exposes:
 - `GET  /status`
 - `GET  /dashboard`
 - `GET  /awaiting`
+- `GET  /analytics`
+- `GET  /settings`
+- `GET  /screenshot/:id`
+- `POST /settings`
+- `POST /onboarding/complete`
+- `POST /parse-resumes`
 - `POST /start | /pause | /resume | /login | /discover`
 - `POST /applications/:id/submit | /skip`
 - `POST /mode  { mode: 'shadow' | 'auto' }`
 - `GET  /stream`  (SSE)
+
+All endpoints (except `/health`) require `Authorization: Bearer $WORKER_TOKEN`
+when `WORKER_TOKEN` is set on the worker.
 
 ## Stack
 

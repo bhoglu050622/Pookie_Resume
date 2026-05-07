@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Settings } from "@pookie/db/queries.js";
+import { worker } from "../../../lib/worker";
+import { IS_DEMO } from "../../../lib/demo";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  for (const [k, v] of Object.entries(body)) Settings.set(k, v);
-  return NextResponse.json({ ok: true });
+  if (IS_DEMO) return NextResponse.json({ ok: true, demo: true });
+  try {
+    return NextResponse.json(await worker.setSettings(body));
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message }, { status: 500 });
+  }
 }

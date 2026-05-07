@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+.next
+**/.next
+.turbo
+.git
+.vercel
+.pookie
+*.log
+.env
+.env.*
+!.env.example
+resumes/*.pdf
+*.pdf

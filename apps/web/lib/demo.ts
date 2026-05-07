@@ -4,8 +4,11 @@
 // "offline" error. To run with real data, start the worker locally:
 //   pnpm dev:worker
 
+// Demo when explicitly requested, OR on Vercel without a worker configured.
+// Setting WORKER_URL on Vercel turns demo OFF and uses the real worker.
 export const IS_DEMO =
-  process.env.VERCEL === "1" || process.env.POOKIE_DEMO === "1";
+  process.env.POOKIE_DEMO === "1" ||
+  (process.env.VERCEL === "1" && !process.env.WORKER_URL);
 
 const day = (offset: number) =>
   new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);

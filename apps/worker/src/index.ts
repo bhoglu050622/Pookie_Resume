@@ -15,7 +15,34 @@ import { getSqlite } from "@pookie/db";
 import { log, subscribe } from "./log.js";
 
 const app = new Hono();
-app.use("*", cors({ origin: ["http://localhost:3000", "http://127.0.0.1:3000"] }));
+const ALLOWED_ORIGINS = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  ...(process.env.WEB_ORIGIN ? [process.env.WEB_ORIGIN] : []),
+];
+app.use(
+  "*",
+  cors({
+    origin: (origin) => {
+      if (!origin) return origin;
+      if (ALLOWED_ORIGINS.includes(origin)) return origin;
+      // Allow any *.vercel.app preview/prod by default — tighten via WEB_ORIGIN if needed.
+      if (/^https:\/\/[\w.-]+\.vercel\.app$/.test(origin)) return origin;
+      return null;
+    },
+  })
+);
+
+// Optional bearer-token auth. Set WORKER_TOKEN on the worker AND on the web app
+// (same value) to protect the public worker URL. /health is always open.
+const WORKER_TOKEN = process.env.WORKER_TOKEN;
+app.use("*", async (c, next) => {
+  if (!WORKER_TOKEN) return next();
+  if (c.req.path === "/health") return next();
+  const auth = c.req.header("authorization") || "";
+  if (auth === `Bearer ${WORKER_TOKEN}`) return next();
+  return c.json({ error: "unauthorized" }, 401);
+});
 
 app.get("/health", (c) => c.json({ ok: true, ts: Date.now() }));
 
@@ -42,6 +69,40 @@ app.get("/dashboard", (c) => {
 });
 
 app.get("/awaiting", (c) => c.json(awaitingReview()));
+
+app.get("/analytics", (c) => {
+  const sqlite = getSqlite();
+  const byResume = sqlite.prepare(`
+    SELECT resume_key,
+      COUNT(*) AS total,
+      SUM(CASE WHEN status='submitted' THEN 1 ELSE 0 END) AS submitted,
+      SUM(CASE WHEN status='replied' OR status='interview' THEN 1 ELSE 0 END) AS replied,
+      SUM(CASE WHEN status='interview' THEN 1 ELSE 0 END) AS interview
+    FROM applications
+    GROUP BY resume_key
+  `).all();
+
+  const tod = sqlite.prepare(`
+    SELECT
+      strftime('%H', datetime(submitted_at/1000, 'unixepoch', 'localtime')) AS hour,
+      COUNT(*) AS sent,
+      SUM(CASE WHEN status='replied' OR status='interview' THEN 1 ELSE 0 END) AS replied
+    FROM applications
+    WHERE submitted_at IS NOT NULL
+    GROUP BY hour
+    ORDER BY hour
+  `).all();
+
+  const days = sqlite.prepare(`
+    SELECT
+      date(datetime(submitted_at/1000, 'unixepoch', 'localtime')) AS day,
+      COUNT(*) AS n
+    FROM applications WHERE submitted_at IS NOT NULL
+    GROUP BY day ORDER BY day
+  `).all();
+
+  return c.json({ byResume, tod, days });
+});
 
 app.post("/start", async (c) => {
   Settings.set("paused", false);
@@ -106,6 +167,87 @@ app.post("/applications/:id/skip", async (c) => {
   const id = Number(c.req.param("id"));
   getSqlite().prepare("UPDATE applications SET status='skipped' WHERE id = ?").run(id);
   return c.json({ ok: true });
+});
+
+app.get("/settings", (c) => {
+  const sqlite = getSqlite();
+  const bank = sqlite.prepare("SELECT key, value FROM question_bank").all() as any[];
+  const filters = sqlite.prepare("SELECT * FROM search_filters WHERE active = 1 ORDER BY id DESC LIMIT 1").get() as any;
+  const settingsRows = sqlite.prepare("SELECT key, value FROM settings").all() as any[];
+  const settings = Object.fromEntries(settingsRows.map((r) => [r.key, JSON.parse(r.value)]));
+  return c.json({
+    bank: Object.fromEntries(bank.map((r) => [r.key, r.value])),
+    filters: filters
+      ? {
+          keywords: JSON.parse(filters.keywords),
+          locations: JSON.parse(filters.locations),
+          remote: !!filters.remote,
+          postedDays: filters.posted_within_days,
+          exclusions: JSON.parse(filters.exclusions),
+        }
+      : null,
+    settings,
+  });
+});
+
+app.post("/settings", async (c) => {
+  const body = await c.req.json();
+  for (const [k, v] of Object.entries(body)) Settings.set(k, v);
+  return c.json({ ok: true });
+});
+
+app.post("/onboarding/complete", async (c) => {
+  const body = await c.req.json();
+  const sqlite = getSqlite();
+  const upsert = sqlite.prepare(
+    `INSERT INTO question_bank (key, value, ts) VALUES (?, ?, unixepoch()*1000)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value, ts=excluded.ts`
+  );
+  for (const [k, v] of Object.entries(body.bank ?? {})) upsert.run(k, String(v));
+  sqlite.prepare("UPDATE search_filters SET active = 0").run();
+  sqlite.prepare(
+    `INSERT INTO search_filters (keywords, locations, remote, posted_within_days, exclusions, active)
+     VALUES (?, ?, ?, ?, ?, 1)`
+  ).run(
+    JSON.stringify(body.keywords ?? []),
+    JSON.stringify(body.locations ?? []),
+    body.remote ? 1 : 0,
+    Number(body.postedDays ?? 7),
+    JSON.stringify(body.exclusions ?? [])
+  );
+  Settings.set("onboarded", true);
+  Settings.set("shadow_started_at", Date.now());
+  Settings.set("mode", "shadow");
+  return c.json({ ok: true });
+});
+
+app.get("/screenshot/:id", async (c) => {
+  const id = c.req.param("id");
+  const { readFile } = await import("node:fs/promises");
+  const file = path.resolve(__dirname_, "../../..", ".pookie/screenshots", id, "screenshot.png");
+  try {
+    const buf = await readFile(file);
+    return new Response(buf, { headers: { "Content-Type": "image/png", "Cache-Control": "no-store" } });
+  } catch {
+    return c.json({ error: "not found" }, 404);
+  }
+});
+
+app.post("/parse-resumes", async (c) => {
+  const { spawn } = await import("node:child_process");
+  return new Promise<Response>((resolve) => {
+    const proc = spawn("pnpm", ["--filter", "@pookie/profile", "parse"], {
+      cwd: path.resolve(__dirname_, "../../.."),
+      env: process.env,
+    });
+    let stdout = ""; let stderr = "";
+    proc.stdout.on("data", (b) => (stdout += b.toString()));
+    proc.stderr.on("data", (b) => (stderr += b.toString()));
+    proc.on("close", (code) => {
+      if (code === 0) resolve(new Response(JSON.stringify({ ok: true, stdout }), { headers: { "Content-Type": "application/json" } }));
+      else resolve(new Response(JSON.stringify({ error: stderr || stdout || `exit ${code}` }), { status: 500, headers: { "Content-Type": "application/json" } }));
+    });
+  });
 });
 
 app.post("/mode", async (c) => {

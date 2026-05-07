@@ -1,27 +1,38 @@
 import { SettingsForm } from "./settings-form";
-import { getSqlite } from "@pookie/db";
+import { worker } from "../../lib/worker";
+import { IS_DEMO } from "../../lib/demo";
 
 export const dynamic = "force-dynamic";
 
+const demoData = {
+  bank: {
+    "phone": "(555) 123-4567",
+    "years_of_experience": "3",
+    "authorized_to_work_us": "Yes",
+    "willing_to_relocate": "Open",
+    "salary_expectation": "$70,000-$90,000",
+  },
+  filters: {
+    keywords: ["recruiting coordinator", "events coordinator", "people operations"],
+    locations: ["Remote", "New York, NY", "San Francisco, CA"],
+    remote: true,
+    postedDays: 7,
+    exclusions: ["sales", "BDR"],
+  },
+  settings: {
+    mode: "shadow",
+    daily_cap: 22,
+    paused: false,
+  },
+};
+
 async function loadServerData() {
-  const sqlite = getSqlite();
-  const bank = sqlite.prepare("SELECT key, value FROM question_bank").all() as any[];
-  const filters = sqlite.prepare("SELECT * FROM search_filters WHERE active = 1 ORDER BY id DESC LIMIT 1").get() as any;
-  const settingsRows = sqlite.prepare("SELECT key, value FROM settings").all() as any[];
-  const settings = Object.fromEntries(settingsRows.map((r) => [r.key, JSON.parse(r.value)]));
-  return {
-    bank: Object.fromEntries(bank.map((r) => [r.key, r.value])),
-    filters: filters
-      ? {
-          keywords: JSON.parse(filters.keywords),
-          locations: JSON.parse(filters.locations),
-          remote: !!filters.remote,
-          postedDays: filters.posted_within_days,
-          exclusions: JSON.parse(filters.exclusions),
-        }
-      : null,
-    settings,
-  };
+  if (IS_DEMO) return demoData;
+  try {
+    return await worker.getSettings();
+  } catch {
+    return demoData;
+  }
 }
 
 export default async function SettingsPage() {

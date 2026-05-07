@@ -10,9 +10,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@pookie/db": "workspace:*",
-    "@pookie/profile": "workspace:*",
-    "better-sqlite3": "11.6.0",
     "canvas-confetti": "1.9.3",
     "class-variance-authority": "0.7.0",
     "clsx": "2.1.1",

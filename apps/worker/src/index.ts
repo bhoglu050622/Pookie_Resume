@@ -9,7 +9,7 @@ import { serve } from "@hono/node-server";
 import { startQueueLoop, stopQueueLoop, enqueue } from "./queue.js";
 import { ensureLoggedIn } from "./linkedin/login.js";
 import { applyToJob } from "./linkedin/easy-apply.js";
-import { closeContext } from "./stealth.js";
+import { closeContext, getContext } from "./stealth.js";
 import { Settings, todayFunnel, weeklySparkline, lastApplications, awaitingReview, dailyAppCount } from "@pookie/db/queries.js";
 import { getSqlite } from "@pookie/db";
 import { log, subscribe } from "./log.js";
@@ -124,6 +124,61 @@ app.post("/login", async (c) => {
   // Fire login flow non-blocking
   ensureLoggedIn().catch((e) => log.error({ err: e?.message }, "login flow error"));
   return c.json({ ok: true });
+});
+
+// Cookie-based login: caller pastes LinkedIn cookies (typically exported via a
+// browser extension like "Cookie-Editor"). We inject them into the persistent
+// browser profile so subsequent worker actions are signed in. Used in cloud
+// deployments where headed login isn't possible.
+app.post("/login/cookies", async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const raw: any[] = Array.isArray(body?.cookies) ? body.cookies : Array.isArray(body) ? body : [];
+  if (raw.length === 0) return c.json({ error: "expected { cookies: [...] }" }, 400);
+
+  const sameSiteOf = (s: any): "Strict" | "Lax" | "None" => {
+    const v = String(s ?? "").toLowerCase();
+    if (v === "strict") return "Strict";
+    if (v === "none" || v === "no_restriction" || v === "unspecified") return "None";
+    return "Lax";
+  };
+
+  const cookies = raw
+    .map((c: any) => ({
+      name: String(c.name ?? ""),
+      value: String(c.value ?? ""),
+      domain: String(c.domain ?? ""),
+      path: String(c.path ?? "/"),
+      expires:
+        typeof c.expirationDate === "number"
+          ? Math.floor(c.expirationDate)
+          : typeof c.expires === "number"
+          ? c.expires
+          : -1,
+      httpOnly: !!c.httpOnly,
+      secure: !!c.secure,
+      sameSite: sameSiteOf(c.sameSite),
+    }))
+    .filter((c) => c.name && c.value && c.domain && c.domain.includes("linkedin"));
+
+  if (cookies.length === 0) {
+    return c.json({ error: "no linkedin cookies found in payload" }, 400);
+  }
+
+  const ctx = await getContext();
+  await ctx.addCookies(cookies as any);
+
+  // Verify by hitting the feed and checking we don't redirect to /login.
+  const page = ctx.pages()[0] ?? (await ctx.newPage());
+  await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded" }).catch(() => {});
+  await page.waitForLoadState("networkidle").catch(() => {});
+  const url = page.url();
+  const onFeed = url.includes("/feed");
+
+  if (onFeed) {
+    Settings.set("session_logged_in", true);
+    return c.json({ ok: true, count: cookies.length, signed_in: true });
+  }
+  return c.json({ ok: false, count: cookies.length, signed_in: false, landed_on: url }, 200);
 });
 
 app.post("/discover", async (c) => {

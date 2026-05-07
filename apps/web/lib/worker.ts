@@ -40,6 +40,10 @@ export const worker = {
   start: () => worker.json<any>("/start", { method: "POST" }),
   pause: () => worker.json<any>("/pause", { method: "POST" }),
   login: () => worker.json<any>("/login", { method: "POST" }),
+  loginCookies: (cookies: any[]) => worker.json<{ ok: boolean; count: number; signed_in: boolean; landed_on?: string }>(
+    "/login/cookies",
+    { method: "POST", body: JSON.stringify({ cookies }) }
+  ),
   discover: (body: any) => worker.json<any>("/discover", { method: "POST", body: JSON.stringify(body) }),
   setMode: (mode: "shadow" | "auto") => worker.json<any>("/mode", { method: "POST", body: JSON.stringify({ mode }) }),
   submitApplication: (id: number) => worker.json<any>(`/applications/${id}/submit`, { method: "POST" }),

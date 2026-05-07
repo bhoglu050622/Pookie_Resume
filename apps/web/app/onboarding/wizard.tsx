@@ -47,9 +47,10 @@ export function Wizard({ initialStatus }: { initialStatus: any }) {
   const [postedDays, setPostedDays] = useState(7);
   const [exclusions, setExclusions] = useState<string[]>(["unpaid", "internship", "intern"]);
 
-  const [loginStarted, setLoginStarted] = useState(false);
   const [sessionLoggedIn, setSessionLoggedIn] = useState(initialStatus?.session_logged_in ?? false);
-  const [pollingLogin, setPollingLogin] = useState(false);
+  const [cookiesText, setCookiesText] = useState("");
+  const [submittingCookies, setSubmittingCookies] = useState(false);
+  const [cookieError, setCookieError] = useState<string | null>(null);
 
   const [finishing, setFinishing] = useState(false);
 
@@ -70,21 +71,35 @@ export function Wizard({ initialStatus }: { initialStatus: any }) {
     }
   }
 
-  async function startLogin() {
-    setLoginStarted(true);
-    await fetch("/api/control/login", { method: "POST" });
-    setPollingLogin(true);
-    // Poll status until session_logged_in flips true
-    const start = Date.now();
-    while (Date.now() - start < 5 * 60_000) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const s = await fetch("/api/status").then((r) => r.json()).catch(() => null);
-      if (s?.session_logged_in) {
-        setSessionLoggedIn(true);
-        break;
+  async function submitCookies() {
+    setSubmittingCookies(true);
+    setCookieError(null);
+    try {
+      let cookies: any[] = [];
+      try {
+        const parsed = JSON.parse(cookiesText.trim());
+        cookies = Array.isArray(parsed) ? parsed : (parsed?.cookies ?? []);
+      } catch {
+        throw new Error("That doesn't look like JSON. Use the Cookie-Editor extension's Export → JSON.");
       }
+      if (!Array.isArray(cookies) || cookies.length === 0) throw new Error("No cookies found in the JSON.");
+      const r = await fetch("/api/login/cookies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cookies }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `worker error ${r.status}`);
+      if (j?.signed_in) {
+        setSessionLoggedIn(true);
+      } else {
+        throw new Error("Cookies imported but LinkedIn didn't recognize the session — they may be expired. Re-export and try again.");
+      }
+    } catch (e: any) {
+      setCookieError(e?.message ?? "Could not connect");
+    } finally {
+      setSubmittingCookies(false);
     }
-    setPollingLogin(false);
   }
 
   async function finish() {
@@ -172,24 +187,45 @@ export function Wizard({ initialStatus }: { initialStatus: any }) {
             <Linkedin size={20} style={{ color: "var(--color-primary)" }} />
             <h2 className="text-xl">Connect LinkedIn</h2>
           </div>
-          <p className="text-[14px]" style={{ color: "var(--color-ink-soft)" }}>
-            We'll open a browser window. Sign in like normal — we never see your password. The session is saved locally to <code>.pookie/session/</code>.
-          </p>
-          <div className="mt-5 flex items-center gap-3">
-            {sessionLoggedIn ? (
+
+          {sessionLoggedIn ? (
+            <div className="flex items-center gap-3">
               <span className="pill pill-success"><Check size={12} /> Connected</span>
-            ) : !loginStarted ? (
-              <button className="btn btn-primary" onClick={startLogin}>Open LinkedIn</button>
-            ) : (
-              <span className="pill pill-info">
-                {pollingLogin ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                {pollingLogin ? "Waiting for sign-in…" : "Connected"}
-              </span>
-            )}
-            {sessionLoggedIn && (
               <button className="btn btn-ghost" onClick={() => setStep(4)}>Next <ArrowRight size={14} /></button>
-            )}
-          </div>
+            </div>
+          ) : (
+            <>
+              <p className="text-[14px]" style={{ color: "var(--color-ink-soft)" }}>
+                Pookie runs in the cloud, so it can't open a sign-in window for you. Instead, sign in to LinkedIn yourself in your browser, then export your cookies once. Pookie reuses them.
+              </p>
+              <ol className="mt-4 text-[13px] flex flex-col gap-2" style={{ color: "var(--color-ink-soft)" }}>
+                <li><strong>1.</strong> Install the <a className="link" href="https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm" target="_blank" rel="noreferrer">Cookie-Editor</a> extension on Chrome.</li>
+                <li><strong>2.</strong> Open <a className="link" href="https://www.linkedin.com/feed/" target="_blank" rel="noreferrer">linkedin.com/feed</a> and make sure you're signed in.</li>
+                <li><strong>3.</strong> Click the Cookie-Editor icon → <em>Export</em> → <em>Export as JSON</em> (copies to clipboard).</li>
+                <li><strong>4.</strong> Paste below and hit Connect.</li>
+              </ol>
+              <textarea
+                className="textarea mt-4 font-mono text-[12px]"
+                rows={6}
+                placeholder="[ { &quot;name&quot;: &quot;li_at&quot;, &quot;value&quot;: &quot;...&quot;, &quot;domain&quot;: &quot;.linkedin.com&quot;, ... } ]"
+                value={cookiesText}
+                onChange={(e) => setCookiesText(e.target.value)}
+              />
+              {cookieError && (
+                <div className="text-[13px] mt-2" style={{ color: "var(--color-warn)" }}>
+                  {cookieError}
+                </div>
+              )}
+              <div className="mt-4 flex items-center gap-3">
+                <button className="btn btn-primary" disabled={submittingCookies || !cookiesText.trim()} onClick={submitCookies}>
+                  {submittingCookies && <Loader2 size={14} className="animate-spin" />} Connect
+                </button>
+                <p className="text-[12px]" style={{ color: "var(--color-ink-faint)" }}>
+                  Cookies stay on Pookie's server — never sent anywhere else.
+                </p>
+              </div>
+            </>
+          )}
         </div>
       )}
 

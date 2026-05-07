@@ -26,10 +26,15 @@ function profileDir(): string {
 export async function getContext(): Promise<BrowserContext> {
   if (_context) return _context;
   const dir = profileDir();
-  log.info({ dir }, "launching persistent chrome");
+  // Headless by default in containers (Railway/Docker); can override locally with PLAYWRIGHT_HEADLESS=0.
+  const headless = process.env.PLAYWRIGHT_HEADLESS !== "0";
+  // Use bundled chromium (Playwright base image ships chromium, not Chrome stable).
+  // Set PLAYWRIGHT_CHANNEL=chrome locally if you want to use real Chrome.
+  const channel = process.env.PLAYWRIGHT_CHANNEL;
+  log.info({ dir, headless, channel: channel ?? "chromium" }, "launching persistent browser");
   _context = await chromium.launchPersistentContext(dir, {
-    channel: "chrome",
-    headless: false,
+    ...(channel ? { channel } : {}),
+    headless,
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: 2,
     locale: "en-IN",
@@ -37,10 +42,9 @@ export async function getContext(): Promise<BrowserContext> {
     args: [
       "--disable-blink-features=AutomationControlled",
       "--disable-features=IsolateOrigins,site-per-process",
+      ...(headless ? ["--no-sandbox"] : []),
     ],
   });
-  // playwright-extra may have already created a page when persistent context launches
-  // Don't proactively create one — the orchestrator will.
   return _context;
 }
 
